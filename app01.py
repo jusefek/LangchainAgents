@@ -3,15 +3,16 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
+# Page config must be the first Streamlit command
 st.set_page_config(page_title="Content Generator 🤖", page_icon="🤖")
-st.title("Content generator 🤖")
+st.title("Content generator")
 
-# Sidebar for API Key
-st.sidebar.title("Configuration")
+# Sidebar for API Key input
+st.sidebar.header("Configuration")
 api_key = st.sidebar.text_input("Enter your Groq API Key:", type="password")
 
 if not api_key:
-    st.info("Please enter your Groq API Key in the sidebar to continue.")
+    st.info("⬅️ Please enter your Groq API Key in the sidebar to continue.")
     st.stop()
 
 ## Connection with the LLM
@@ -50,7 +51,7 @@ cta = st.checkbox("Include CTA")
 hashtags = st.checkbox("Return Hashtags")
 keywords = st.text_area("Keywords (SEO):", placeholder="Example: wellness, preventive healthcare...")
 
-if st.button("Generate Content"):
+if st.button("Content generator"):
     if not topic:
          st.warning("Please enter a topic.")
     else:
