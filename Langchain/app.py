@@ -46,7 +46,19 @@ tools = [calculate_word_length, power_calculation]
 
 # --- Chat Interface ---
 st.title("🤖 Google LangChain Agent")
-st.write("Talk to the agent. It has tools to calculate word length and powers.")
+
+with st.expander("ℹ️ **What can this agent do?**", expanded=True):
+    st.write("""
+    I am an intelligent agent powered by Google Gemini. I can help you with:
+    
+    1.  **General Conversation**: Chat with me about any topic.
+    2.  **Word Analysis**: Ask me to count the letters in a word.
+        *   *Example:* "How many letters are there in 'Streamlit'?"
+    3.  **Math**: Ask me to calculate powers of numbers.
+        *   *Example:* "Calculate 2 raised to the power of 10."
+    
+    Just type your question below! 👇
+    """)
 
 # Initialize Chat History
 if "messages" not in st.session_state:
