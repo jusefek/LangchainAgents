@@ -1,11 +1,17 @@
 import streamlit as st
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool
-from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
-from langchain_core.messages import HumanMessage, AIMessage
 import os
+
+# Debugging Imports
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain.agents import AgentExecutor, create_tool_calling_agent
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.tools import tool
+    from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
+    from langchain_core.messages import HumanMessage, AIMessage
+except ImportError as e:
+    st.error(f"Import Error: {e}")
+    st.stop()
 
 # Page Config
 st.set_page_config(page_title="Gemini Agent", page_icon="🤖")
@@ -13,6 +19,11 @@ st.set_page_config(page_title="Gemini Agent", page_icon="🤖")
 # Sidebar for API Key
 with st.sidebar:
     st.title("🤖 Configuration")
+    
+    # Debug info
+    import langchain
+    st.caption(f"LangChain Version: {langchain.__version__}")
+    
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
     else:
