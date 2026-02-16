@@ -18,28 +18,37 @@ with st.sidebar:
         
     st.markdown("---")
     st.subheader("Model Settings")
-    model_name = st.text_input("Model Name", value="gemini-1.5-flash")
     
-    # --- Debug / Connection Test ---
-    if st.button("🔌 Test Connection & List Models"):
-        if not api_key:
-            st.error("Please enter an API Key first.")
-        else:
-            try:
-                genai.configure(api_key=api_key)
-                models = genai.list_models()
-                found_models = []
-                for m in models:
-                    if 'generateContent' in m.supported_generation_methods:
-                        found_models.append(m.name)
-                
-                if found_models:
-                    st.success(f"Connection Successful! Found {len(found_models)} models.")
-                    st.json(found_models)
-                else:
-                    st.warning("Connection technically valid, but no 'generateContent' models found. Check API Key permissions.")
-            except Exception as e:
-                st.error(f"Connection Failed: {e}")
+    # Dynamic Model Discovery
+    available_models = []
+    if api_key:
+        try:
+            genai.configure(api_key=api_key)
+            models = genai.list_models()
+            for m in models:
+                if 'generateContent' in m.supported_generation_methods:
+                    # Clean up model name (remove 'models/' prefix if present for display, but keep for usage if needed)
+                    # actually LangChain usually expects just the name or 'models/name' depending on version.
+                    # 'models/gemini-1.5-flash' is standard for the SDK.
+                    available_models.append(m.name)
+        except Exception as e:
+            st.error(f"Error fetching models: {e}")
+            
+    if available_models:
+        # Try to find a good default
+        default_index = 0
+        for i, m in enumerate(available_models):
+            if "gemini-1.5" in m:
+                default_index = i
+                break
+        
+        selected_model = st.selectbox("Select Available Model", available_models, index=default_index)
+        model_name = selected_model
+    else:
+        # Fallback if discovery fails or no key yet
+        model_name = st.text_input("Model Name (e.g. gemini-1.5-flash)", value="gemini-1.5-flash")
+        if api_key:
+             st.warning("Could not automatically list models. Please type one manually.")
 
 # --- Tools ---
 @tool
