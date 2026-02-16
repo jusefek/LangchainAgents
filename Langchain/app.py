@@ -1,37 +1,21 @@
 import streamlit as st
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.tools import tool
 import os
-
-# Debugging Imports
-try:
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain.agents import AgentExecutor, create_tool_calling_agent
-    from langchain_core.prompts import ChatPromptTemplate
-    from langchain_core.tools import tool
-    from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
-    from langchain_core.messages import HumanMessage, AIMessage
-except ImportError as e:
-    st.error(f"Import Error: {e}")
-    st.stop()
 
 # Page Config
 st.set_page_config(page_title="Gemini Agent", page_icon="🤖")
 
-# Sidebar for API Key
+# --- Configuration ---
 with st.sidebar:
     st.title("🤖 Configuration")
-    
-    # Debug info
-    import langchain
-    st.caption(f"LangChain Version: {langchain.__version__}")
-    
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
     else:
         api_key = st.text_input("Enter Google API Key", type="password")
-        if not api_key:
-            st.warning("Please enter your Google API Key to continue.")
-
-# --- Custom Tools ---
+        
+# --- Tools ---
 @tool
 def calculate_word_length(word: str) -> int:
     """Calculates the length of a given word."""
@@ -43,85 +27,89 @@ def power_calculation(base: float, exponent: float) -> float:
     return base ** exponent
 
 tools = [calculate_word_length, power_calculation]
+tools_map = {t.name: t for t in tools}
 
-# --- Chat Interface ---
-st.title("🤖 Google LangChain Agent")
+# --- Main App ---
+st.title("🤖 Google Gemini 'Lite' Agent")
 
-with st.expander("ℹ️ **What can this agent do?**", expanded=True):
-    st.write("""
-    I am an intelligent agent powered by Google Gemini. I can help you with:
-    
-    1.  **General Conversation**: Chat with me about any topic.
-    2.  **Word Analysis**: Ask me to count the letters in a word.
-        *   *Example:* "How many letters are there in 'Streamlit'?"
-    3.  **Math**: Ask me to calculate powers of numbers.
-        *   *Example:* "Calculate 2 raised to the power of 10."
-    
-    Just type your question below! 👇
+with st.expander("ℹ️ **Capabilities**", expanded=False):
+    st.info("""
+    This simplified agent uses direct tool calling (no AgentExecutor).
+    - **Tools**: Word Length, Power Calculation.
+    - **Model**: Gemini 1.5 Flash.
     """)
 
-# Initialize Chat History
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display Chat Messages
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Display History
+for msg in st.session_state.messages:
+    if isinstance(msg, HumanMessage):
+        role = "user"
+        content = msg.content
+    elif isinstance(msg, AIMessage):
+        role = "assistant"
+        content = msg.content or ""
+        # If it was a tool call, we might want to show that, but for now just show content if present
+        if not content and msg.tool_calls:
+            content = f"🛠️ *Calling tools: {', '.join([tc['name'] for tc in msg.tool_calls])}* ..."
+    elif isinstance(msg, ToolMessage):
+        role = "tool"
+        content = f"✅ *Tool Result:* {msg.content}"
+    else:
+        role = "assistant"
+        content = str(msg)
+    
+    # Hide tool outputs or show them as distinct? Let's show them as assistant for simplicity
+    if role != "tool": 
+        with st.chat_message(role):
+            st.markdown(content)
 
-# --- Main Interaction Logic ---
-if prompt := st.chat_input("What is on your mind?"):
-    # Add user message to history
-    st.session_state.messages.append({"role": "user", "content": prompt})
+# Input
+if prompt := st.chat_input("Ask me something..."):
+    if not api_key:
+        st.error("Please enter your API Key in the sidebar.")
+        st.stop()
+        
+    # User Message
+    st.session_state.messages.append(HumanMessage(content=prompt))
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    if not api_key:
-        st.error("Please provide a Google API Key in the sidebar.")
-        st.stop()
-
-    # --- Agent Setup ---
     try:
-        # Initialize LLM
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash", 
-            google_api_key=api_key,
-            temperature=0
-        )
+        # Init Model
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
+        llm_with_tools = llm.bind_tools(tools)
 
-        # Create Agent
-        prompt_template = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful assistant. Use your tools to answer questions. If you don't need a tool, just answer."),
-            ("placeholder", "{chat_history}"),
-            ("human", "{input}"),
-            ("placeholder", "{agent_scratchpad}"),
-        ])
-        
-        agent = create_tool_calling_agent(llm, tools, prompt_template)
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-        # Execute with Visualization
         with st.chat_message("assistant"):
-            st_callback = StreamlitCallbackHandler(st.container())
+            # 1. First Call
+            response_msg = llm_with_tools.invoke(st.session_state.messages)
+            st.session_state.messages.append(response_msg)
             
-            # Prepare chat history for the agent context
-            chat_history = []
-            for msg in st.session_state.messages[:-1]: # Exclude the current user message
-                if msg["role"] == "user":
-                    chat_history.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    chat_history.append(AIMessage(content=msg["content"]))
+            # 2. Check for Tool Calls
+            if response_msg.tool_calls:
+                st.write(f"🛠️ *Thinking... (Calling: {', '.join([tc['name'] for tc in response_msg.tool_calls])})*")
+                
+                # Execute Tools loop
+                for tool_call in response_msg.tool_calls:
+                    selected_tool = tools_map[tool_call["name"]]
+                    tool_output = selected_tool.invoke(tool_call["args"])
+                    
+                    # Create Tool Message
+                    tool_msg = ToolMessage(
+                        content=str(tool_output),
+                        tool_call_id=tool_call["id"]
+                    )
+                    st.session_state.messages.append(tool_msg)
+                    # st.markdown(f"*Result: {tool_output}*") # Optional debug
 
-            response = agent_executor.invoke(
-                {"input": prompt, "chat_history": chat_history},
-                {"callbacks": [st_callback]} 
-            )
-            
-            output = response["output"]
-            st.markdown(output)
-
-        # Add assistant message to history
-        st.session_state.messages.append({"role": "assistant", "content": output})
+                # 3. Second Call (Get final answer)
+                final_response = llm_with_tools.invoke(st.session_state.messages)
+                st.markdown(final_response.content)
+                st.session_state.messages.append(final_response)
+            else:
+                # No tools needed
+                st.markdown(response_msg.content)
 
     except Exception as e:
-        st.error(f"An error occurred: {e}")
+        st.error(f"Error: {e}")
