@@ -1,4 +1,5 @@
 import streamlit as st
+import google.generativeai as genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
@@ -15,8 +16,31 @@ with st.sidebar:
     else:
         api_key = st.text_input("Enter Google API Key", type="password")
         
-    model_name = st.text_input("Model Name", value="gemini-1.5-pro")
-        
+    st.markdown("---")
+    st.subheader("Model Settings")
+    model_name = st.text_input("Model Name", value="gemini-1.5-flash")
+    
+    # --- Debug / Connection Test ---
+    if st.button("🔌 Test Connection & List Models"):
+        if not api_key:
+            st.error("Please enter an API Key first.")
+        else:
+            try:
+                genai.configure(api_key=api_key)
+                models = genai.list_models()
+                found_models = []
+                for m in models:
+                    if 'generateContent' in m.supported_generation_methods:
+                        found_models.append(m.name)
+                
+                if found_models:
+                    st.success(f"Connection Successful! Found {len(found_models)} models.")
+                    st.json(found_models)
+                else:
+                    st.warning("Connection technically valid, but no 'generateContent' models found. Check API Key permissions.")
+            except Exception as e:
+                st.error(f"Connection Failed: {e}")
+
 # --- Tools ---
 @tool
 def calculate_word_length(word: str) -> int:
@@ -34,11 +58,10 @@ tools_map = {t.name: t for t in tools}
 # --- Main App ---
 st.title("🤖 Google Gemini 'Lite' Agent")
 
-with st.expander("ℹ️ **Capabilities**", expanded=False):
+with st.expander("ℹ️ **Capabilities**", expanded= False):
     st.info("""
-    This simplified agent uses direct tool calling (no AgentExecutor).
+    This simplified agent uses direct tool calling.
     - **Tools**: Word Length, Power Calculation.
-    - **Model**: Gemini 1.5 Flash.
     """)
 
 if "messages" not in st.session_state:
@@ -52,7 +75,6 @@ for msg in st.session_state.messages:
     elif isinstance(msg, AIMessage):
         role = "assistant"
         content = msg.content or ""
-        # If it was a tool call, we might want to show that, but for now just show content if present
         if not content and msg.tool_calls:
             content = f"🛠️ *Calling tools: {', '.join([tc['name'] for tc in msg.tool_calls])}* ..."
     elif isinstance(msg, ToolMessage):
@@ -62,7 +84,6 @@ for msg in st.session_state.messages:
         role = "assistant"
         content = str(msg)
     
-    # Hide tool outputs or show them as distinct? Let's show them as assistant for simplicity
     if role != "tool": 
         with st.chat_message(role):
             st.markdown(content)
@@ -73,14 +94,19 @@ if prompt := st.chat_input("Ask me something..."):
         st.error("Please enter your API Key in the sidebar.")
         st.stop()
         
-    # User Message
     st.session_state.messages.append(HumanMessage(content=prompt))
     with st.chat_message("user"):
         st.markdown(prompt)
 
     try:
         # Init Model
-        llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key)
+        # Using the official ChatGoogleGenerativeAI wrapper
+        llm = ChatGoogleGenerativeAI(
+            model=model_name, 
+            google_api_key=api_key,
+            temperature=0,
+            convert_system_message_to_human=True # Helps with some role errors
+        )
         llm_with_tools = llm.bind_tools(tools)
 
         with st.chat_message("assistant"):
@@ -97,21 +123,19 @@ if prompt := st.chat_input("Ask me something..."):
                     selected_tool = tools_map[tool_call["name"]]
                     tool_output = selected_tool.invoke(tool_call["args"])
                     
-                    # Create Tool Message
                     tool_msg = ToolMessage(
                         content=str(tool_output),
                         tool_call_id=tool_call["id"]
                     )
                     st.session_state.messages.append(tool_msg)
-                    # st.markdown(f"*Result: {tool_output}*") # Optional debug
 
                 # 3. Second Call (Get final answer)
                 final_response = llm_with_tools.invoke(st.session_state.messages)
                 st.markdown(final_response.content)
                 st.session_state.messages.append(final_response)
             else:
-                # No tools needed
                 st.markdown(response_msg.content)
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"**Error:** {e}")
+        st.info("💡 Tip: Use the 'Test Connection' button in the sidebar to see which models are available to your API Key.")
