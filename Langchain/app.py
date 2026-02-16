@@ -15,6 +15,8 @@ with st.sidebar:
     else:
         api_key = st.text_input("Enter Google API Key", type="password")
         
+    model_name = st.text_input("Model Name", value="gemini-1.5-pro")
+        
 # --- Tools ---
 @tool
 def calculate_word_length(word: str) -> int:
@@ -78,7 +80,7 @@ if prompt := st.chat_input("Ask me something..."):
 
     try:
         # Init Model
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
+        llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key)
         llm_with_tools = llm.bind_tools(tools)
 
         with st.chat_message("assistant"):
